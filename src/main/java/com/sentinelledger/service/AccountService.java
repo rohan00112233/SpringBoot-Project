@@ -30,4 +30,25 @@ public class AccountService {
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Account not found with id: " + id));
     }
+    
+    public Account updateAccount(Long id, Account updatedAccount) {
+    	
+    	Account existingAccount = accountRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Account not found"+ id) );
+    	
+    	existingAccount.setAccountHolderName(updatedAccount.getAccountHolderName());
+    	
+    	existingAccount.setAccountHolderName(updatedAccount.getAccountHolderName());
+    	
+    	existingAccount.setBalance(updatedAccount.getBalance());
+    	
+    	return accountRepository.save(existingAccount);
+    }
+
+	public void deleteAccount(long id) {
+		Account existingAccount = accountRepository.findById(id).orElseThrow(()-> new ResourceNotFoundException("Account not found with id:" + id));
+		
+		accountRepository.delete(existingAccount);
+		// TODO Auto-generated method stub
+		
+	}
 }
