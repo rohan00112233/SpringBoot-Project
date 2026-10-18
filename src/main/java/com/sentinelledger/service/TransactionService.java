@@ -23,15 +23,18 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final AccountRepository accountRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
+    private final FraudDetectionService fraudDetectionService;
 
     public TransactionService(
             TransactionRepository transactionRepository,
             AccountRepository accountRepository,
-            LedgerEntryRepository ledgerEntryRepository) {
+            LedgerEntryRepository ledgerEntryRepository,
+            FraudDetectionService fraudDetectionService) {
 
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
+        this.fraudDetectionService = fraudDetectionService;
     }
 
     @Transactional
@@ -58,7 +61,17 @@ public class TransactionService {
                     "Sender and receiver accounts must be different");
         }
 
-        // 4. Find sender
+        // 4. Apply fraud detection before processing the transfer
+        if (fraudDetectionService.isHighValueTransaction(
+                transaction.getAmount())) {
+
+            throw new IllegalArgumentException(
+                    fraudDetectionService.getFraudReason(
+                            transaction.getAmount())
+                    + "; transaction was not processed");
+        }
+
+        // 5. Find sender account
         Account sender = accountRepository
                 .findById(transaction.getSenderAccountId())
                 .orElseThrow(() ->
@@ -66,7 +79,7 @@ public class TransactionService {
                                 "Sender account not found with id: "
                                         + transaction.getSenderAccountId()));
 
-        // 5. Find receiver
+        // 6. Find receiver account
         Account receiver = accountRepository
                 .findById(transaction.getReceiverAccountId())
                 .orElseThrow(() ->
@@ -74,13 +87,13 @@ public class TransactionService {
                                 "Receiver account not found with id: "
                                         + transaction.getReceiverAccountId()));
 
-        // 6. Check available balance
+        // 7. Check available balance
         if (sender.getBalance().compareTo(transaction.getAmount()) < 0) {
             throw new IllegalArgumentException(
                     "Insufficient balance in sender account");
         }
 
-        // 7. Update account balances
+        // 8. Update account balances
         sender.setBalance(
                 sender.getBalance().subtract(transaction.getAmount()));
 
@@ -90,18 +103,18 @@ public class TransactionService {
         accountRepository.save(sender);
         accountRepository.save(receiver);
 
-        // 8. Generate transaction details
+        // 9. Generate transaction details
         transaction.setTransactionReference(
                 "TXN-" + UUID.randomUUID());
 
         transaction.setStatus("SUCCESS");
         transaction.setCreatedAt(LocalDateTime.now());
 
-        // 9. Save the transaction first
+        // 10. Save the completed transaction
         Transaction savedTransaction =
                 transactionRepository.save(transaction);
 
-        // 10. Create the sender's DEBIT ledger entry
+        // 11. Create the sender's DEBIT ledger entry
         LedgerEntry debitEntry = new LedgerEntry();
         debitEntry.setTransaction(savedTransaction);
         debitEntry.setAccount(sender);
@@ -111,7 +124,7 @@ public class TransactionService {
 
         ledgerEntryRepository.save(debitEntry);
 
-        // 11. Create the receiver's CREDIT ledger entry
+        // 12. Create the receiver's CREDIT ledger entry
         LedgerEntry creditEntry = new LedgerEntry();
         creditEntry.setTransaction(savedTransaction);
         creditEntry.setAccount(receiver);
@@ -121,7 +134,7 @@ public class TransactionService {
 
         ledgerEntryRepository.save(creditEntry);
 
-        // 12. Return the completed transaction
+        // 13. Return the completed transaction
         return savedTransaction;
     }
 
