@@ -1,11 +1,12 @@
+
 package com.sentinelledger.service;
-import com.sentinelledger.exception.ResourceNotFoundException;
 
 import java.util.List;
 
 import org.springframework.stereotype.Service;
 
 import com.sentinelledger.entity.Account;
+import com.sentinelledger.exception.ResourceNotFoundException;
 import com.sentinelledger.repository.AccountRepository;
 
 @Service
@@ -18,6 +19,14 @@ public class AccountService {
     }
 
     public Account createAccount(Account account) {
+
+        if (accountRepository.existsByAccountNumber(
+                account.getAccountNumber())) {
+            throw new IllegalArgumentException(
+                    "Account number already exists: "
+                    + account.getAccountNumber());
+        }
+
         return accountRepository.save(account);
     }
 
@@ -28,27 +37,42 @@ public class AccountService {
     public Account getAccountById(Long id) {
         return accountRepository.findById(id)
                 .orElseThrow(() ->
-                        new ResourceNotFoundException("Account not found with id: " + id));
-    }
-    
-    public Account updateAccount(Long id, Account updatedAccount) {
-    	
-    	Account existingAccount = accountRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Account not found"+ id) );
-    	
-    	existingAccount.setAccountHolderName(updatedAccount.getAccountHolderName());
-    	
-    	existingAccount.setAccountHolderName(updatedAccount.getAccountHolderName());
-    	
-    	existingAccount.setBalance(updatedAccount.getBalance());
-    	
-    	return accountRepository.save(existingAccount);
+                        new ResourceNotFoundException(
+                                "Account not found with id: " + id));
     }
 
-	public void deleteAccount(long id) {
-		Account existingAccount = accountRepository.findById(id).orElseThrow(()-> new ResourceNotFoundException("Account not found with id:" + id));
-		
-		accountRepository.delete(existingAccount);
-		// TODO Auto-generated method stub
-		
-	}
+    public Account updateAccount(Long id, Account updatedAccount) {
+
+        Account existingAccount = accountRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Account not found with id: " + id));
+
+        if (accountRepository.existsByAccountNumberAndIdNot(
+                updatedAccount.getAccountNumber(), id)) {
+            throw new IllegalArgumentException(
+                    "Account number already exists: "
+                    + updatedAccount.getAccountNumber());
+        }
+
+        existingAccount.setAccountHolderName(
+                updatedAccount.getAccountHolderName());
+
+        existingAccount.setAccountNumber(
+                updatedAccount.getAccountNumber());
+
+        // Balance can only be modified through transaction processing.
+
+        return accountRepository.save(existingAccount);
+    }
+
+    public void deleteAccount(Long id) {
+
+        Account existingAccount = accountRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Account not found with id: " + id));
+
+        accountRepository.delete(existingAccount);
+    }
 }

@@ -48,20 +48,21 @@ public class TransactionService {
         }
 
         // 2. Validate account IDs
-        if (transaction.getSenderAccountId() == null
-                || transaction.getReceiverAccountId() == null) {
+        Long senderId = transaction.getSenderAccountId();
+        Long receiverId = transaction.getReceiverAccountId();
+
+        if (senderId == null || receiverId == null) {
             throw new IllegalArgumentException(
                     "Sender and receiver account IDs are required");
         }
 
         // 3. Prevent transfers to the same account
-        if (transaction.getSenderAccountId()
-                .equals(transaction.getReceiverAccountId())) {
+        if (senderId.equals(receiverId)) {
             throw new IllegalArgumentException(
                     "Sender and receiver accounts must be different");
         }
 
-        // 4. Apply fraud detection before processing the transfer
+        // 4. Apply fraud detection
         if (fraudDetectionService.isHighValueTransaction(
                 transaction.getAmount())) {
 
@@ -71,23 +72,49 @@ public class TransactionService {
                     + "; transaction was not processed");
         }
 
-        // 5. Find sender account
-        Account sender = accountRepository
-                .findById(transaction.getSenderAccountId())
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Sender account not found with id: "
-                                        + transaction.getSenderAccountId()));
+        // 5. Lock accounts in ascending ID order.
+        // This reduces the risk of deadlocks between opposite transfers.
 
-        // 6. Find receiver account
-        Account receiver = accountRepository
-                .findById(transaction.getReceiverAccountId())
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Receiver account not found with id: "
-                                        + transaction.getReceiverAccountId()));
+        Account firstAccount;
+        Account secondAccount;
 
-        // 7. Check available balance
+        if (senderId < receiverId) {
+
+            firstAccount = accountRepository.findByIdForUpdate(senderId)
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Sender account not found with id: "
+                                            + senderId));
+
+            secondAccount = accountRepository.findByIdForUpdate(receiverId)
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Receiver account not found with id: "
+                                            + receiverId));
+
+        } else {
+
+            firstAccount = accountRepository.findByIdForUpdate(receiverId)
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Receiver account not found with id: "
+                                            + receiverId));
+
+            secondAccount = accountRepository.findByIdForUpdate(senderId)
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Sender account not found with id: "
+                                            + senderId));
+        }
+
+        // 6. Identify sender and receiver after locking
+        Account sender = senderId.equals(firstAccount.getId())
+                ? firstAccount : secondAccount;
+
+        Account receiver = receiverId.equals(firstAccount.getId())
+                ? firstAccount : secondAccount;
+
+        // 7. Check available balance after acquiring locks
         if (sender.getBalance().compareTo(transaction.getAmount()) < 0) {
             throw new IllegalArgumentException(
                     "Insufficient balance in sender account");
@@ -104,37 +131,39 @@ public class TransactionService {
         accountRepository.save(receiver);
 
         // 9. Generate transaction details
+        LocalDateTime transactionTime = LocalDateTime.now();
+
         transaction.setTransactionReference(
                 "TXN-" + UUID.randomUUID());
 
         transaction.setStatus("SUCCESS");
-        transaction.setCreatedAt(LocalDateTime.now());
+        transaction.setCreatedAt(transactionTime);
 
-        // 10. Save the completed transaction
+        // 10. Save transaction
         Transaction savedTransaction =
                 transactionRepository.save(transaction);
 
-        // 11. Create the sender's DEBIT ledger entry
+        // 11. Create sender DEBIT ledger entry
         LedgerEntry debitEntry = new LedgerEntry();
         debitEntry.setTransaction(savedTransaction);
         debitEntry.setAccount(sender);
         debitEntry.setEntryType("DEBIT");
         debitEntry.setAmount(transaction.getAmount());
-        debitEntry.setCreatedAt(LocalDateTime.now());
+        debitEntry.setCreatedAt(transactionTime);
 
         ledgerEntryRepository.save(debitEntry);
 
-        // 12. Create the receiver's CREDIT ledger entry
+        // 12. Create receiver CREDIT ledger entry
         LedgerEntry creditEntry = new LedgerEntry();
         creditEntry.setTransaction(savedTransaction);
         creditEntry.setAccount(receiver);
         creditEntry.setEntryType("CREDIT");
         creditEntry.setAmount(transaction.getAmount());
-        creditEntry.setCreatedAt(LocalDateTime.now());
+        creditEntry.setCreatedAt(transactionTime);
 
         ledgerEntryRepository.save(creditEntry);
 
-        // 13. Return the completed transaction
+        // 13. Return completed transaction
         return savedTransaction;
     }
 
