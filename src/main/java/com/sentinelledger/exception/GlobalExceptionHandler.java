@@ -1,6 +1,7 @@
 package com.sentinelledger.exception;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -38,23 +39,24 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Map<String, Object> handleValidationException(
-            MethodArgumentNotValidException exception) {
 
-        String message = exception.getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .map(error -> error.getDefaultMessage())
-                .findFirst()
-                .orElse("Validation failed");
+@ExceptionHandler(MethodArgumentNotValidException.class)
+@ResponseStatus(HttpStatus.BAD_REQUEST)
+public Map<String, Object> handleValidationException(
+        MethodArgumentNotValidException exception) {
 
-        return Map.of(
-                "timestamp", LocalDateTime.now(),
-                "status", 400,
-                "error", "Bad Request",
-                "message", message
-        );
-    }
+    List<String> errors = exception.getBindingResult()
+            .getFieldErrors()
+            .stream()
+            .map(error -> error.getField() + ": " + error.getDefaultMessage())
+            .toList();
+
+    return Map.of(
+            "timestamp", LocalDateTime.now(),
+            "status", 400,
+            "error", "Bad Request",
+            "messages", errors
+    );
+}
+
 }
