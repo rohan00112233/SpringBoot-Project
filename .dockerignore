@@ -1,0 +1,7 @@
+.git
+.gitignore
+target/
+*.zip
+concurrency_test.py
+src/main/resources/application.properties
+src/test/resources/application-test.properties
